@@ -1,8 +1,6 @@
 extern crate libc;
 
 use std::io;
-use libc::{getpwnam};
-use std::mem;
 
 
 fn get_username() -> String {
@@ -13,21 +11,26 @@ fn get_username() -> String {
     }
 }
          
-fn get_userpath(username: &str) -> String {
+fn get_userpath(username: &str) -> Result<String, &'static str> {
     let c_username = match std::ffi::CString::new(username) {
         Ok(s)  => s,
         Err(_) => panic!("Could not convert username?")
     };
-
+    
+    let mut pwbuf = [0; 4096];
+    let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut result: *mut libc::passwd = std::ptr::null_mut();
+    
     unsafe {
-        println!("YES 1");
-        let c_passwd = getpwnam(c_username.as_ptr());
-        if c_passwd == 0 {
-            return String::from("");
-        }
-        let s = std::ffi::CStr::from_ptr((*c_passwd).pw_dir).to_string_lossy().into_owned();
-        mem::drop(c_passwd);
-        s
+        libc::getpwnam_r(c_username.as_ptr(),
+                         &mut pwd as *mut _,
+                         pwbuf.as_mut_ptr(),
+                         pwbuf.len() as libc::size_t,
+                         &mut result as *mut _)
+    };
+    match result as u32 {
+        0 => Err("User not found."),
+        _ => Ok(unsafe {std::ffi::CStr::from_ptr(pwd.pw_dir)}.to_string_lossy().into_owned())
     }
 }
 
@@ -36,6 +39,8 @@ fn get_userpath(username: &str) -> String {
 fn main() {
     let i_username = get_username();
     let username = i_username.trim();
-    let path = get_userpath(username);
-    println!("HEY: {}", path);
+    match get_userpath(username) {
+        Ok(path) => println!("HEY: {}", path),
+        Err(s) => println!("{}", s)
+    }
 }
