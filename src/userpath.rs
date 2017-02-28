@@ -1,7 +1,6 @@
 extern crate libc;
 
 use std::io;
-use std::str;
 
 
 fn get_username() -> String {
@@ -35,36 +34,13 @@ fn get_userpath(username: &str) -> Result<String, &'static str> {
     }
 }
 
-fn get_userplan(userdir: &String) -> Result<u32, &'static str> {
-    let planpath = userdir + ".plan";
-    let planpath_c = match std::ffi::CString::new(planpath) {
-        Ok(s) => s,
-        Err(_) => panic!("Could not build new plan path?")
-    };
 
-    let mut statbuf: libc::stat = unsafe { std::mem::zeroed() };
-
-    let result = unsafe {
-        libc::lstat(planpath_c.as_ptr(), &mut statbuf)
-    };
-    match result as u32 {
-        0 => Ok(result),
-        _ => panic!("Could not find plan on path.")
-    }
-    return statbuf.st_size;
-}
-    
 
 fn main() {
     let i_username = get_username();
     let username = i_username.trim();
     match get_userpath(username) {
-        Ok(path) => {
-            println!("HEY: {}", path);
-            let filesize = get_userplan(path);
-            println!("SIZE: {}", filesize);
-        },
+        Ok(path) => println!("HEY: {}", path),
         Err(s) => println!("{}", s)
     }
-    
 }

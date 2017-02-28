@@ -3,4 +3,8 @@ target
 .#*
 *~
 *.orig
+*.aux
+*.log
+*.out
+*.pdf
 notes/

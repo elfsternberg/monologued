@@ -1,0 +1,176 @@
+% -*- Mode: noweb; noweb-code-mode: rust-mode ; noweb-doc-mode: latex-mode -*-
+\documentclass{article}
+\usepackage{noweb}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{fontspec, xunicode, xltxtra}
+\setmainfont{Centaur MT Std}
+
+\begin{document}
+
+% Generate code and documentation with:
+%
+% noweave -filter l2h -delay -x -html backbonestore.nw | htmltoc > backbonestore.html
+% notangle -Rstore.js backbonestore.nw > store.js
+% notangle -Rindex.html backbonestore.nw > index.html
+
+\section{Introduction}
+
+\textbf{Monologued is an RFC-1288 server.}
+
+Monologued is an RFC-1288 (RUIP: Remote User Information Protocol)
+server with a restrict (Q1 only) syntax.  It has been mostly written as
+an exercise in Rust to learn the MIO (Metal I/O) and libc interfaces, as
+well as Rust in general.
+
+RUIP offers two syntaces:
+
+\begin{lstlisting}
+{Q1}    ::= [{W}|{W}{S}{U}]{C}
+{Q2}    ::= [{W}{S}][{U}]{H}{C}
+{U}     ::= username
+{H}     ::= @hostname | @hostname{H}
+{W}     ::= /W 
+{S}     ::= <SP> | <SP>{S}
+{C}     ::= <CRLF>
+\end{lstlisting}
+
+Monologued supports only the Q1 query, and can be restricted further to
+limit the Q1 query only to those users in a defined group, or even to a
+list of usernames specified in a file or on the command line.  It
+delivers only a user's `.plan` file.  Monologued keeps a small, command
+line-limited collection of plans in a cache, to further support
+displaying them on request.
+
+In the spirit of traditional IP protocol rules, Monologued is fairly
+liberal in its treatment of \{S\} and \{C\}, attempting to make sense of
+them.  It's input buffer is limited to 1KB by default; the maximum
+output size of a .plan file is 128KB.  Changing these limits would
+require a recompile.
+
+\subsection{Literate Program}
+
+A note: this article was written with the
+\nwanchorto{http://en.wikipedia.org/wiki/Literate_programming}{Literate
+ Programming} toolkit
+\nwanchorto{http://www.cs.tufts.edu/~nr/noweb/}{Noweb}. Where you see
+something that looks like \texttt{\<\<this\>\>}, it's a placeholder for code
+described elsewhere in the document.  Placeholders with an equal sign
+at the end of them indicate the place where that code is defined.  The
+link (U->) indicates that the code you're seeing is used later in the
+document, and (<-U) indicates it was used earlier but is being defined
+here.
+
+\subsection{Revision}
+
+This is version 0.4 of \textbf{Monologued}.  
+
+Instructions on generating the code and documentation from this document
+are provided in the accompanying Makefile.
+
+\subsection{Organization}
+
+An RUIP server is a fairly straightforward programming exercise.  As
+we're using MIO, I expect to be using the [[select/poll]] feature with
+which to interact with the outside world, and [[libc]]'s [[getpwnam_r]],
+[[getpwent_r]], and [[lstat]] functionality to determine the presence
+and availability of the user's [[.plan]] file.
+
+Search: To that end, the basic functionality will be, "For a given
+username, return either the plan or a message about discovery failure."
+This is straight-up railway-oriented programming.
+
+Cache: Given a username, either return the cached value or run the
+search.
+
+Server: given a valid search string, ask the cache for a plan.
+
+Monologued is written in Rust.
+
+\section{The file finder}
+
+An RUIP program is essentially a weak web server; it serves only one
+document, understands only one syntax, and that's about it.  There are
+some security issues around serving that document, so we'll address
+those in this section.
+
+The document we are looking for is, in Unix terminology,
+\texttt{\$HOME/.plan}.
+
+To that end, our goal is to turn a username into a plan file.  We'll
+build a module file for that.
+
+<<plan/mod.rs>>=
+pub mod path;
+pub mod plan;
+@
+
+Let's declare a function to lookup the user's path using the username
+via libc.  We're going to return either a valid path to the user's home
+directory, or we're going to return an error message.  
+
+<<plan/plan.rs>>=
+fn get_userpath(username: &str) -> Result<str, &'static str> {
+@
+
+The first thing we need is the username as a cstring.
+
+<<plan/plan.rs>>=
+    let c_username = match std::ffi::CString::new(username) {
+        Ok(s)  => s,
+        Err(_) => return Err("Could not convert username?")
+    };
+@ 
+
+We'll be using the re-entrant version of [[getpwnam]], so we're going to
+need a password structure, a buffer to store the null-terminated strings
+that [[getpwnam]] returns, and a pointer to the result that [[getpwnam]]
+uses as an error handling condition, which ends up either pointing to
+the password structure, or NULL if it fails.  Which is, admittedly,
+kinda silly, but it's what Unix does.
+
+
+
+<<plan/plan.rs>>=
+    let mut pwbuf = [0; 4096];
+    let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut result: *mut libc::passwd = std::ptr::null_mut();
+@ 
+
+Now, I'm going to admit that I'm a little new to Rust, and this seems a
+little looney.  The difference between ``a reference to'' and ``the
+address of'' still escapes me.  I suspect Rust wants most programmers to
+not worry about it too much, but for interacting with libc, it's kinda
+important.  The ``as'' clauses here are for proper memory sizing (I
+think), and the underscores are fillers for us to ignore the type; it's
+just a mutable pointer.  Apparently, for the second case, it doesn't
+even matter that it's a pointer to a pointer.
+
+<<plan/plan.rs>>=
+    unsafe {
+        libc::getpwnam_r(c_username.as_ptr(),
+                         &mut pwd as *mut _,
+                         pwbuf.as_mut_ptr(),
+                         pwbuf.len() as libc::size_t,
+                         &mut result as *mut _)
+    };
+
+@ 
+
+The last step is to deliver the result as a string.  We use the
+[[to_string_lossy]] function to convert to an internal UTF8
+representation, and immediately create an owned copy for the consumer to
+use.
+
+<<plan/plan.rs>>=
+    match result as u32 {
+        0 => Err("User not found."),
+        _ => Ok(unsafe {std::ffi::CStr::from_ptr(pwd.pw_dir)}.to_string_lossy().into_owned())
+    }
+}
+
+
+@                
+
+\end{document}
+
