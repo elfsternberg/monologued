@@ -6,26 +6,28 @@ CARGO=			cargo
 
 all: target/debug/Monologued
 
-.nw.html:
+%.html : %.nw
 	$(NOWEAVE) -filter l2h -delay -index -autodefs c -html $*.nw > $*.html
 
-.nw.tex:
+%.tex : %.nw
 	$(NOWEAVE) -x -delay $*.nw | sed 's/\\<\\<this\\>\\>/<<this>>/' > $*.tex 			#$
 
-.tex.pdf:
+%.pdf : %.tex
 	xelatex $*.tex; \
 	while grep -s 'Rerun to get cross-references right' $*.log; \
         do \
 		xelatex *$.tex; \
 	done
 
-.nw.rs:
+src/%.rs : nw/%.nw
+	$(NOTANGLE) -c -R$(subst src/,,$@ ) $< > $@
+
+src/%/%.rs : nw/%.nw
 
 src/plan/: nw/Monologued.nw
 	mkdir -p $@
 
 src/plan/mod.rs src/plan/plan.rs: nw/Monologued.nw src/plan/
-	$(NOTANGLE) -c -R$(subst src/,,$@ ) $< > $@
 
 target/debug/Monologued: src/*.rs
 	cargo build

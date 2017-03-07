@@ -1,3 +1,6 @@
+extern crate libc;
+use std::fs;
+
 fn get_userpath(username: &str) -> Result<str, &'static str> {
     let c_username = match std::ffi::CString::new(username) {
         Ok(s)  => s,
@@ -20,4 +23,36 @@ fn get_userpath(username: &str) -> Result<str, &'static str> {
     }
 }
 
+fn get_userplan(userpath: &str) -> Result<str, &'static str> {
+    let planpath = format!("{}{}", userpath, '.plan');
+    let res = fs::metadata(planpath);
+    match res {
+        Ok(_) => _,
+        Err(_) => return Err(format!("Could not access user plan {}.", planpath));
+    }
 
+    if res.len() > MAX_PLANSIZE {
+        return Err(format!("Plan {} is too large to return.", planpath));
+    }
+
+    if not res.is_file() {
+        return Err(format!("Plan {} is not a file, cannot be returned.", planpath));
+    }
+    
+    let mut plan = fs::File::open(planpath);
+    let mut contents = String::new();
+
+    let readres = plan.read_to_string(&mut contents);
+    match readres {
+        Ok(_) => return contents;
+        Err(_) => return Err("Plan {} could not be read", planpath);
+    }
+}
+
+
+    
+    
+    
+    
+                    
+    
