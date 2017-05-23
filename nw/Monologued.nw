@@ -76,16 +76,221 @@ which to interact with the outside world, and [[libc]]'s [[getpwnam_r]],
 [[getpwent_r]], and [[lstat]] functionality to determine the presence
 and availability of the user's [[.plan]] file.
 
-Search: To that end, the basic functionality will be, "For a given
-username, return either the plan or a message about discovery failure."
-This is straight-up railway-oriented programming.
+To that end, the basic functionality will be, "For a given username,
+return either the plan or a message about discovery failure."  This is
+straight-up railway-oriented programming, with more precise failures the
+further down into the syntax we go. 
 
-Cache: Given a username, either return the cached value or run the
-search.
+The structure of Monologued is that of a basic server, which parses the
+request and either fails or passes the username to the handler; the
+username lookup either passes or fails (this is important because if you
+delete the username but not the home directory, the inotify feature
+fails); if the username lookup passes we request the plan.
 
-Server: given a valid search string, ask the cache for a plan.
+The plan lookup is twofold-- if the plan is in the cache, we return it
+immediately.  If it isn't, we pull up the plan and, if it's small
+enough, cache it.  Either way, we return it to the server to be sent
+back out.  If there is no plan, we return an error.  If the plan is new
+to the cache, we add it, and we send a message to the server saying that
+it needs to add a new path.  (This is a wrapper layer \textit{before}
+the cache.)
 
-Monologued is written in Rust.
+If Monologued gets a message saying the plan has changed, it evicts the
+existing plan.  That is all.  It loads the new plan upon the next
+request.
+
+\section{The cache}
+
+The cache is a complicated beast and it took me forever to understand
+it.  The basic premise of a cache like this is simple: it's a standard
+dictionary, a Rust \texttt{HashMap}, in which every item carries both
+its key, its value, and two pointers for a doubly-linked list.  The list
+mutates such that recently accessed item is always moved the head.
+Every access always involves four six assignments: two to detach the
+node from wherever it is, four to re-attach it at the head.
+
+Because RFC-1288 is a text-oriented protocol, the cache is designed to
+hold text objects, and to limit the maximum amount of memory used by the
+cached text objects.  To that end, the cache's constructor has two
+parameters: a maximum object size, and a maximum object count.  The
+maximum cache size is the product of these two parameters, but the
+actual number of objects in the cache can be much greater than the
+maximum object count so long as the total cache size stays below the
+maximum.
+
+Objects deposited into this cache must have a ``byte\_size'' method that
+dictates how much ``space'' the object takes up.  For our purposes, this
+is the number of bytes in our text objects, which approximates memory
+usage, but it can be any arbitrary calculation, in which case the
+relationship between cache size and memory usage is also arbitrary.
+
+<<Describe The ByteSized Trait>>=
+trait ByteSized {
+    fn byte_size(&self) -> usize;
+}
+@
+
+The main object in which we keep our cached item also keeps the key and
+the pointers to neighboring objects, if any.  In order to be cacheable,
+the key must meet the traits of [[Hash]] and [[PartialEq]], and our
+value must be ByteSized.  The pointers are just pointers.  Rust's type
+declarations are a bit wonky, but I'm getting used to them.
+
+<<Define The LRU Cache Item>>=
+struct LruCacheItem<K: Hash + PartialEq, V: ByteSized> {
+    key: K,
+    value: V,
+    prev: *mut LruCacheItem<K, V>,
+    next: *mut LruCacheItem<K, V>
+};
+@
+
+And since we're doing text, i.e. strings, we can define that now:
+
+<<Make Strings ByteSized>>=
+impl ByteSized for String {
+    fn byte_size(&self) -> usize {
+        self.len()
+    }
+}
+@
+
+[[HashMap]] takes a key and a value, but we've put the key into the item
+that will be the [[HashMap]] value.  That's okay; what [[HashMap]]
+really needs is anything with the [[Hash]] trait that it can call to
+figure out into which bucket to put the value.  We can make an object
+that references the item and provides the hash of the key.  First, we'll
+need the reference:
+
+<<A Reference to the Cache Key>>=
+struct LruKeyRef<K> {
+    k: *const K
+}
+@
+
+And an implementation.  Dereferencing a raw pointer is always unsafe
+since there are no guarantees it refers to a valid object at compile
+time, so it needs to be marked as such.
+
+<<Implement Hash For The Key>>=
+impl<K: Hash> Hash for LruKeyRef<K> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        unsafe { (*self.k).hash(state) }
+    }
+}
+@
+
+The other thing we need is to implement the [[PartialEq]] trait for our
+hash key.  Again, there are no compile-time assurances that the pointer
+is valid, so dereferencing the key pointer must be marked unsafe.  But
+the real issue here is this: why is the dereferencing of [[other]]
+marked with the ``is-a reference'' symbol, but not [[self]]?  The answer
+is that Rust automatically ensures that self is a reference always.  In
+this case, more importantly, the [[self]] we're discussing isn't the
+[[self]] variable, it's the [[\*self.k]]!  That becomes the 'self' of
+the [[.eq']] method.  We then disable the [[Eq]] trait, as it's not what
+we want.
+
+When people talk about how
+\nwanchorto{http://www.jsoftware.com/papers/tot.htm}{``Notation is a
+  Tool for Thought``}, I often get tripped up by examples like this.  We
+are learning a new and separate language here, and in some cases I can
+understand how it's helpful, but in others it feels more like a barrier
+to learning.
+
+<<Implement PartialEQ for the Key>>=
+impl<K: PartialEq> PartialEq for LruKeyRef<K> {
+    fn eq(&self, other: &LruKeyRef<K>) -> bool {
+        unsafe { (*self.k).eq(&*other.k) }
+    }
+}
+
+impl<K: Eq> Eq for KeyRef<K> {}
+@
+
+Now we're ready to define the structure of the cache itself.  We're
+going to move our cache items onto the heap so they can survive the
+cache being passed around, manipulated, and so forth, and because it'll
+make managing the pointers much less insane.  Here we keep the maximum
+size of an item and of the cache, as well as the head and tail
+pointers. 
+
+<<The LRUCache>>=
+pub struct LruCache<K, V> {
+    cache: HashMap<LruKeyRef<K>, Box<LruCacheItem<K, V>>>,
+    maxitemsize: usize,
+    maxtotalsize: usize,
+    cursize: usize,
+    head *mut LruCacheItem<K, V>,
+    tail *mut LruCacheItem<K, V>
+};
+@
+
+The implementation for the cache is actually not that complicated.
+Here's the basic framework, where we define the implementation for a
+cache where the key is hashable and equatable, and the value is
+bytesized (which is the only implementation we're going to work with).
+
+<<Methods for the cache>>=
+impl<K: Hash + Eq, V: ByteSized> LruCache<K, V> {
+    <<Cache Constructor>>
+
+    <<Insert an Item>>
+
+    <<Remove an Item>>
+
+    <<Get an Item>>
+
+    <<Check for Key's Presence>>
+
+    <<Remove an Item>>
+
+    /* Private interface */
+    <<Evict Items until there's enough room>>
+
+    <<Detach an item from anywhere in the linked list>>
+
+    <<Attach an item to the head of the list>>
+
+    <<Detach, then Attach, to Re-Prioritize>>
+}
+@
+
+The constructor is fairly simple, although you'd never guess from the
+operation at the end.  We need a new [[HashMap]], the various sizes
+we're going to track, and the head and tail of our linked list.  The
+head and the tail are pointers to heap objects, LruCacheItem caches,
+that themselves contain pointers to [[next]] and [[prev]].  We then
+create the classic ``empty list'' ouroboros, handling the initialization
+ourselves.
+
+<<Cache Constructor>>=
+pub fn new(usize maxcount, usize maxsize) -> LruCache<K, V> {
+    let mut lrucache = LruCache {
+        cache: Hashmap::new(),
+        unitsize: maxsize,
+        maxsize: maxsize * maxcount,
+        cursize: 0,
+.            /* I like how the documentation says "Really, reconsider
+           before you do something like this." */
+        head: unsafe { Box::into_raw(Box_new(mem::uninitialized::<LruCacheItem<K, V>>())) },
+        tail: unsafe { Box::into_raw(Box_new(mem::uninitialized::<LruCacheItem<K, V>>())) }
+    }
+    
+    /* Head now contains a pointer to an unboxed heap object that
+       is an LruCacheItem, so that LruCacheItem's 'next' field can
+       be addressed and set to the unboxed heap object Tail.  And
+       vice versa.
+     */
+    unsafe {
+        (*lrucache.head).next = lrucache.tail;
+        (*lrucache.tail).prev = lrucache.head;
+    }
+
+    lrucache
+}
+@
+
 
 \section{The file finder}
 
