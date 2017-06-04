@@ -182,15 +182,28 @@ impl<K: Hash> Hash for LruKeyRef<K> {
 
 The other thing we need is to implement the [[PartialEq]] trait for our
 hash key.  Again, there are no compile-time assurances that the pointer
-is valid, so dereferencing the key pointer must be marked unsafe.  But
-the real issue here is this: why is the dereferencing of [[other]]
-marked with the ``is-a reference'' symbol, but not [[self]]?  The answer
-is that Rust automatically ensures that self is a reference always.  In
-this case, more importantly, the [[self]] we're discussing isn't the
-[[self]] variable, it's the [[\*self.k]]!  That becomes the 'self' of
-the [[.eq']] method.  We then disable the [[Eq]] trait, as it's not what
-we want.
+is valid, so dereferencing the key pointer must be marked unsafe.
 
+For me, the most perplexing thing about this was the signature of the
+unsafe statement.  It took me forever to understand it. So let's go
+through it.  First, the signature for the PartialEq Trait is:
+
+<<PartialEq>>=
+pub trait Eq: PartialEq<Self> { 
+    fn eq(&self, other) -> bool
+}
+@
+
+What are we comparing?  The \texttt{k: *const K} from
+\texttt{LruKeyRef}.  So first we need to dereference that in order to
+access it.  So that's \texttt{*self.k}.  That's the object whose
+equality we will be comparing.  But we don't want to copy it, so we need
+a reference to it.  That's why the right hand side of the expression
+reads \texttt{&*other.k}.
+
+And why doesn't the left hand side say it's a reference?  Because Self
+objects are always automatically made references.  It's a Rust thing.
+               
 When people talk about how
 \nwanchorto{http://www.jsoftware.com/papers/tot.htm}{``Notation is a
   Tool for Thought``}, I often get tripped up by examples like this.  We
