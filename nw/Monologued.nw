@@ -304,6 +304,80 @@ pub fn new(usize maxcount, usize maxsize) -> LruCache<K, V> {
 }
 @
 
+Inserting an item requires a little subtlety.  If there's already a node
+at that key location, we can \textit{replace} the value, leaving the key
+as it is.  Since it's a Boxed value, the original value will be
+automatically deallocated away.  If it's not there, we need to create a
+new Boxed value (to assist with the automatic deallocation, naturally).
+
+As this this a method, the signature is self, key, and value, with the
+value \textbf{requiring} move semantics to ensure memory safety.  The
+first thing we do is try to find the node and create a new pointer to
+it.  [[.get_mut()]] always returns a mutable reference, so we have to
+de-reference it twice to get the node, the (naturally) re-reference it
+to get the pointer.  Because Rust.
+
+[[eject_as_needed()]] tries to ensure there's enough room left in the
+cache for the new object.  If the new object is smaller than the object
+it's replacing, this calculation will be negative and
+[[eject_as_needed]] won't do anything at all.  If the new object is
+bigger, it'll see if something needs to be ejected to make room.
+(Question: What if \textit{this thing} ends up on the ejection list?)
+
+<<Insert an Item>>=
+pub fn insert(&mut self, k: K, v: V) {
+    let node_ptr = self.cache.get_mut(&LruKeyRef { k: &k }).map(|node| {
+        let node_ptr: *mut LruCacheItem<K, V> = &mut **node;
+        node_ptr
+    });
+
+    match node_ptr {
+        Some(node_ptr) => {
+            self.eject_as_needed(v.len() - (*node_ptr).val.len(), Some(node_ptr));
+            unsafe { *(node_ptr).val = v };
+            self.reprioritize(node_ptr);
+        }
+
+        None => {
+            let old_node = self.eject_as_needed(v.len(), None);
+            match old_node {
+                Some(old_node) {
+                    
+            
+            
+@
+
+<<Remove an Item>>=
+
+@
+
+<<Get an Item>>=
+
+@
+
+<<Check for Key's Presence>>=
+
+@
+
+<<Remove an Item>>=
+
+@
+
+<<Evict Items until there's enough room>>=
+
+@
+
+<<Detach an item from anywhere in the linked list>>=
+
+@
+
+<<Attach an item to the head of the list>>=
+
+@
+
+<<Detach, then Attach, to Re-Prioritize>>=
+
+@
 
 \section{The file finder}
 

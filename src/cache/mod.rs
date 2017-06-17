@@ -37,6 +37,7 @@ struct LruKeyRef<K> {
    into place.
 */
 
+
 impl<K: Hash> Hash for LruKeyRef<K> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         unsafe { (*self.k).hash(state) }
@@ -51,13 +52,15 @@ struct LruCacheItem<K: Hash + PartialEq, V: Sized> {
     next: *mut LruCacheItem<K, V>
 };
 
+
 /* 
-   AH!  &self is a *reference* to the reference *const K:k; it's a
-   reference to a reference.  But other is also a reference, so why
-   the &*other.key construct? -- Answer, because in this context, self
-   automatically becomes a reference to self, and automatically
-   appends the (unseen) & symbol.  A weird and inconvenient
-   convenience.
+   &self is a reference to the LruKeyRef, but we can't compare
+   KeyRefs, we need to keys.  So we need to dereference it with
+   *self.k.  Now we can exploit the fact that the K's are comparable.
+   The reason there's no reference symbol on the left but there is on
+   the right is because when using method syntax like self.eq
+   (self.<anything>, really), the left hand is automatically assumed
+   to be a reference, to avoid unnecessary copying.
 */
 
 impl<K: PartialEq> PartialEq for LruKeyRef<K> {
@@ -66,7 +69,9 @@ impl<K: PartialEq> PartialEq for LruKeyRef<K> {
     }
 }
 
+
 impl<K: Eq> Eq for KeyRef<K> {}
+
 
 impl<K, V> LruCacheItem<K, V> {
     fn new(key: K, value: V) -> Self {
@@ -74,16 +79,24 @@ impl<K, V> LruCacheItem<K, V> {
             key: key,
             value: value,
             size: usize,
-            prev: ptr::null_mut(),
+            prev: aptr::null_mut(),
             next: ptr::null_mut()
         }
     }
 }
 
+
+impl ByteSized for String {
+    fn byte_size(&self) -> usize {
+        self.len()
+    }
+}
+
+
 pub struct LruCache<K, V> {
     cache: HashMap<LruKeyRef<K>, Box<LruCacheItem<V>>>,
-    unitsize: usize,
-    maxsize: usize,
+    maxitemsize: usize,
+    maxtotalsize: usize,
     cursize: usize,
     head *mut LruCacheItem<K, V>,
     tail *mut LruCacheItem<K, V>
