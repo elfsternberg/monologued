@@ -39,5 +39,5 @@ clean:
 	- rm -f *.tex *.dvi *.aux *.toc *.log *.out *.html *.js
 
 realclean: clean
-	- rm -f *.pdf
+	- rm -f *.pdf *~ \#* *\#
 
