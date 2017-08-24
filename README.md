@@ -30,3 +30,8 @@ cache handler.  Which just sounds like a ton of fun, doesn't it?
 Monologued is still very much not working.  Don't even bother
 downloading.  It's mostly something to cut my teeth on while I try to
 figure out how Rust works.
+
+I wrote a prototype, if you're at all curious, in the
+<code>proto/</code> folder.  It's in
+[Hy](http://docs.hylang.org/en/stable/), my favorite variant of Python.
+You Have Been Warned.
