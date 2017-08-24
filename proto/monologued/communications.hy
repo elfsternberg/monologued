@@ -22,62 +22,72 @@
          None))
      (except [err KeyError] None))))
 
+(defn tap [a] (print a) a)
 
-(defn ruipserver [backlog port]
-  (let [clients 0
-        clientmap {}
-        outputs []
-        running 1
-        server (socket.socket socket.AF_INET socket.SOCK_STREAM)
-        inputs [server]
-        
-        sighandler (fn [signum frame]
-                     (for [o outputs] (.close 0))
-                     (.close server))
-        
-        getname (fn [client]
-                  (let [info (get clientmap client)
-                        (, host name) (, (-> (get info 0) (get 0)) (get info 1))]
-                    (.join "@" host name)))
+(defclass server []
+  [--init-- (fn [self backlog port]
+     (setv self.clients 0)
+     (setv self.clientmap {})
+     (setv self.outputs [])
+     (setv self.running True)
+     (setv self.server (socket.socket socket.AF_INET socket.SOCK_STREAM))
+     (.setsockopt self.server socket.SOL_SOCKET socket.SO_REUSEADDR 1)
+     (.bind self.server (, "" port))
+     (.listen self.server backlog)
+     (signal.signal signal.SIGINT self.sighandler))
 
-        cleanup (fn [s]
-                  (nonlocal clientmap)
-                  (.close s)
-                  (if (in s outputs)
-                    (.remove outputs s))
-                  (.remove inputs s)
-                  (del clientmap s))]
+   addclient (fn [self]
+     (setv (, client address) (.accept self.server))
+     (setv self.clients (+ self.clients 1))
+     (.append self.outputs client)
+     (assoc self.clientmap client
+            {"address" address "data" (bytearray "" "utf-8") "response" ""}))
 
-    (.setsockopt server socket.SOL_SOCKET socket.SO_REUSEADDR 1)
-    (.bind server (, "" port))
-    (.listen server backlog)
-    (signal.signal signal.SIGINT sighandler)
-    (while running
-      (try
-       (let [(, inputready outputready exceptready) (select.select inputs outputs [])]
+   getrequest (fn [self s]
+     (setv client (get self.clientmap s))
+     (setv data (+ (get client "data") (.recv s BUFSIZE)))
+     (setv ldata (len data))
+     (if (> ldata MAXQ)
+       (.cleanup self s)
+       (if (and (> ldata 2)
+                (not (= -1 (.find data (.encode "\r\n")))))
+         (assoc client "response" (get-plan-maybe data)))))
+
+   serve (fn [self]
+     (while self.running
+       (do
+         (setv inputs (+ [self.server] (list (.keys self.clientmap))))
+
+         (try
+           (setv (, inputready outputready exceptready) (select.select inputs self.outputs []))
+           (except [e select.error] (do (print "SELECT.ERROR") (break)))
+           (except [e socket.error] (do (print "SOCKET.ERROR") (break))))
+
          (for [s inputready]
-           (if (= s server)
-             (let [(, client address) (.accept server)]
-               (nonlocal clients clientmap)
-               (setv clients (+ clients 1))
-               (.append inputs client)
-               (.append outputs client)
-               (assoc clientmap client {"address" address "data" (bytearray "" "utf-8") "response" ""}))
-             (let [client (get clientmap s)
-                   data (+ (get client "data") (.recv s BUFSIZE))
-                   ldata (len data)]
-               (if (> ldata MAXQ)
-                 (cleanup s)
-                 (if (and (> ldata 2)
-                          (not (= -1 (.find data (.encode "\r\n")))))
-                   (assoc client "response" (get-plan-maybe data)))))))
-         (for [s outputready]
-           (if (not (= s server))
-             (let [response (get (get clientmap s) "response")]
-               (if (> (len response) 0)
-                 (.send s (bytearray response)))
-               (cleanup s)))))
-       (except [e select.error] (break))
-       (except [e socket.error] (break))))))
+           (if (= s self.server)
+             (.addclient self)
+             (.getrequest self s))
 
-(ruipserver 5 7979)
+           (for [s outputready]
+             (if (not (= s self.server))
+               (do 
+                 (setv response (get (get self.clientmap s) "response"))
+                 (if (> (len response) 0)
+                   (do
+                     (.send s (bytearray response))
+                     (.cleanup self s))))))))))
+
+   cleanup (fn [self s]
+     (.close s)
+     (if (in s self.outputs)
+       (.remove self.outputs s))
+     (del (get self.clientmap s))
+     (setv self.clients (- self.clients 1)))
+
+   sighandler (fn [self signum frame]
+     (for [o self.outputs]
+       (.close o))
+     (.close self.server)
+     (setv self.running False))])
+
+(.serve (server 5 7979))
