@@ -1,0 +1,106 @@
+% ===> this file was generated automatically by noweave --- better not edit it
+
+% -*- Mode: noweb; noweb-code-mode: rust-mode ; noweb-doc-mode: latex-mode -*-
+\documentclass{article}
+\usepackage{noweb}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{fontspec, xunicode, xltxtra}
+\setmainfont{Centaur MT Std}
+
+\begin{document}
+
+% Generate code and documentation with:
+%
+% noweave -filter l2h -delay -x -html backbonestore.nw | htmltoc > backbonestore.html
+% notangle -Rstore.js backbonestore.nw > store.js
+% notangle -Rindex.html backbonestore.nw > index.html
+
+\section{Introduction}
+
+\textbf{Monologued is an RFC-1288 server.}
+
+Monologued is an RFC-1288 (RUIP: Remote User Information Protocol)
+server with a restrict (Q1 only) syntax.  It has been mostly written as
+an exercise in Rust to learn the MIO (Metal I/O) and libc interfaces, as
+well as Rust in general.
+
+RUIP offers two syntaces:
+
+\begin{lstlisting}
+{Q1}    ::= [{W}|{W}{S}{U}]{C}
+{Q2}    ::= [{W}{S}][{U}]{H}{C}
+{U}     ::= username
+{H}     ::= @hostname | @hostname{H}
+{W}     ::= /W 
+{S}     ::= <SP> | <SP>{S}
+{C}     ::= <CRLF>
+\end{lstlisting}
+
+Monologued supports only the Q1 query, and can be restricted further to
+limit the Q1 query only to those users in a defined group, or even to a
+list of usernames specified in a file or on the command line.  It
+delivers only a user's `.plan` file.  Monologued keeps a small, command
+line-limited collection of plans in a cache, to further support
+displaying them on request.
+
+In the spirit of traditional IP protocol rules, Monologued is fairly
+liberal in its treatment of \{S\} and \{C\}, attempting to make sense of
+them.  It's input buffer is limited to 1KB by default; the maximum
+output size of a .plan file is 128KB.  Changing these limits would
+require a recompile.
+
+\subsection{Literate Program}
+
+A note: this article was written with the
+\nwanchorto{http://en.wikipedia.org/wiki/Literate_programming}{Literate
+  Programming} toolkit
+\nwanchorto{http://www.cs.tufts.edu/~nr/noweb/}{Noweb}. Where you see
+something that looks like \texttt{<<this>>}, it's a placeholder for code
+described elsewhere in the document.  Placeholders with an equal sign
+at the end of them indicate the place where that code is defined.  The
+link (U->) indicates that the code you're seeing is used later in the
+document, and (<-U) indicates it was used earlier but is being defined
+here.
+
+\subsection{Revision}
+
+This is version 0.4 of \textbf{Monologued}.  
+
+Instructions on generating the code and documentation from this document
+are provided in the accompanying Makefile.
+
+\subsection{Organization}
+
+An RUIP server is a fairly straightforward programming exercise.  As
+we're using MIO, I expect to be using the {\Tt{}select/poll\nwendquote} feature with
+which to interact with the outside world, and {\Tt{}libc\nwendquote}'s {\Tt{}getpwnam{\_}r\nwendquote},
+{\Tt{}getpwent{\_}r\nwendquote}, and {\Tt{}lstat\nwendquote} functionality to determine the presence
+and availability of the user's {\Tt{}.plan\nwendquote} file.
+
+Search: To that end, the basic functionality will be, "For a given
+username, return either the plan or a message about discovery failure."
+This is straight-up railway-oriented programming.
+
+Cache: Given a username, either return the cached value or run the
+search.
+
+Server: given a valid search string, ask the cache for a plan.
+
+Monologued is written in Rust.
+
+\section{The file finder}
+
+An RUIP program is essentially a weak web server; it serves only one
+document, understands only one syntax, and that's about it.  There are
+some security issues around serving that document, so we'll address
+those in this section.
+
+The document we are looking for is, in Unix terminology,
+\texttt{\$HOME/.plan}.
+
+
+\end{document}
+
+
+\nwfilename{nw/Monologued.nw}

@@ -7,6 +7,10 @@ use mio::timer::Timer;
 use std::collections::HashMap;
 use std::time::Duration;
 
+use std::cmp::Ordering;
+use std::collection:BinaryHeap;
+
+use tokenqueue;
 
 struct Monologue {
     buffer: [u8; 512],
@@ -42,7 +46,7 @@ impl Server {
         }
     }
 
-    pub fn serve(self) {
+    pub fn serve(&self) {
         let mut buf = [0; 1024];
         let mut events = Events::with_capacity(1024);
         let mut connections = HashMap::new();
