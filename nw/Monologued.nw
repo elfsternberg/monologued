@@ -166,15 +166,13 @@ them:
                 LISTENER => {
                     <<new connection>>
                 }
-                (token) => {
-                    
-
-    
-    
-    
-    
-
-                   
+                token => {
+                    <<handle existing connection>>
+                }
+            }
+        }
+    }
+}
 @ 
 
 
