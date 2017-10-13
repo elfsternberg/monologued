@@ -1,12 +1,4 @@
 [root]
-name = "rfc1288"
-version = "0.1.0"
-dependencies = [
- "bytes 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "quick-error 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
 name = "Monologued"
 version = "0.1.0"
 dependencies = [

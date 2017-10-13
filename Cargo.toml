@@ -1,8 +1,6 @@
-[package]
-name = "Monologued"
-version = "0.1.0"
-authors = ["Elf M. Sternberg <elf.sternberg@gmail.com>"]
+[workspace]
+members = [
+    "monologued",
+    "rfc1288",
+]
 
-[dependencies]
-mio = "0.6.10"
-net2 = "0.2.31"
