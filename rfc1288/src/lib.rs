@@ -47,7 +47,7 @@ fn is_unix_conventional(i: Option<&u8>) -> bool {
     }
 }
 
-pub fn find_username(buffer: bytes::Bytes) -> Result<Request, TxError> {
+pub fn parse_rfc1288_request(buffer: bytes::Bytes) -> Result<Request, TxError> {
     if buffer.len() < 2 {
         return Err(TxError::BadProtocol);
     }
@@ -105,7 +105,7 @@ mod tests {
 
     #[test]
     fn good_list() {
-        let res = find_username(Bytes::from("/W"));
+        let res = parse_rfc1288_request(Bytes::from("/W"));
         match res {
             Ok(c) => assert_eq!(c, Request::UserList),
             Err(_) => assert!(false),
@@ -114,7 +114,7 @@ mod tests {
 
     #[test]
     fn good_list_w_spaces() {
-        let res = find_username(Bytes::from("/W                           "));
+        let res = parse_rfc1288_request(Bytes::from("/W                           "));
         match res {
             Ok(c) => assert_eq!(c, Request::UserList),
             Err(_) => assert!(false),
@@ -124,7 +124,7 @@ mod tests {
     
     #[test]
     fn bad_start0() {
-        let res = find_username(Bytes::from(""));
+        let res = parse_rfc1288_request(Bytes::from(""));
         match res {
             Ok(_) => assert!(false),
             Err(e) => assert_eq!(e, TxError::BadProtocol),
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn bad_start1() {
-        let res = find_username(Bytes::from("/"));
+        let res = parse_rfc1288_request(Bytes::from("/"));
         match res {
             Ok(_) => assert!(false),
             Err(e) => assert_eq!(e, TxError::BadProtocol),
@@ -142,7 +142,7 @@ mod tests {
 
     #[test]
     fn bad_start2() {
-        let res = find_username(Bytes::from("/X"));
+        let res = parse_rfc1288_request(Bytes::from("/X"));
         match res {
             Ok(_) => assert!(false),
             Err(e) => assert_eq!(e, TxError::BadProtocol),
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn good_name() {
-        let res = find_username(Bytes::from("/W foozle"));
+        let res = parse_rfc1288_request(Bytes::from("/W foozle"));
         match res {
             Ok(e) => if let Request::User(v) = e { assert_eq!(b"foozle", v.as_slice()) } else { assert!(false); }, 
             Err(_) => assert!(false)
@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn good_name_extra_space() {
-        let res = find_username(Bytes::from("/W foozle   "));
+        let res = parse_rfc1288_request(Bytes::from("/W foozle   "));
         match res {
             Ok(e) => if let Request::User(v) = e { assert_eq!(b"foozle", v.as_slice()) } else { assert!(false); }, 
             Err(_) => assert!(false)
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn good_name_w_host() {
-        let res = find_username(Bytes::from("/W foozle@localhost"));
+        let res = parse_rfc1288_request(Bytes::from("/W foozle@localhost"));
         match res {
             Ok(e) => if let Request::Remote(u, h) = e {
                 assert_eq!(b"foozle", u.as_slice());
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn good_name_w_host_and_spaces() {
-        let res = find_username(Bytes::from("/W   foozle@localhost   "));
+        let res = parse_rfc1288_request(Bytes::from("/W   foozle@localhost   "));
         match res {
             Ok(e) => if let Request::Remote(u, h) = e {
                 assert_eq!(b"foozle", u.as_slice());
@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn bad_name() {
-        let res = find_username(Bytes::from("/W   foozle..   "));
+        let res = parse_rfc1288_request(Bytes::from("/W   foozle..   "));
         match res {
             Ok(_) => assert!(false),
             Err(e) => assert_eq!(e, TxError::BadRequest),
