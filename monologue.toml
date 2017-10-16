@@ -1,0 +1,42 @@
+[logging]
+
+# Log levels.  "NORMAL" produces a log vaguely similar to the Common Log
+# Format.  "OFF" disables debuggging, although this can be changed/set
+# from the command line.  "DEBUG" will include internal error messages.
+# The CLF uses HTTP status codes as follows:
+#
+# 200 OK - A .plan was found and sent.
+# 400 BAD REQUEST - The request was not in RFC1288 format.
+# 403 FORBIDDEN - The request asked for a user either on the exclude
+#     list or not in the include rules.
+# 404 NOT FOUND - The request asked for a user that does not exist.
+#
+# These codes are NOT transmitted to the client.  Their purpose is to
+# record which requests resulted in a monologue, which requested a user
+# that was not found, which requested a user on the exclusion list (see
+# below), and which requests were not formatted correctly.  Note that
+# the exclusion list is checked first so FORBIDDEN errors are logged
+# correctly, even if the include and pathinclude fields are used.
+
+loglevel = "NORMAL"
+logfile = "/var/log/finger.log"
+
+[users]
+
+# List of users available for query.  If this list is populated, only
+# users in this list may be available for query, although users
+# appearing in the exclude list override this setting.
+
+include = ["user"]
+
+# List of users who are never available for query.  Exclude overrides
+# include; users who appear in the exclude list will never be available
+# for query.
+
+exclude = ["root", "daemon", "bin", "sys", "sync", "games", "man", "lp", "mail", "news", "uucp", "proxy", "www-data", "backup", "list", "irc", "gnats", "nobody", "systemd-timesync", "systemd-network", "systemd-resolve", "systemd-bus-proxy", "syslog", "ntp", "avahi", "dnsmasq", "usbmux", "sshd", "clamav", "postgres", "geoclue"]
+
+
+# If this field is present, only users whose home directory starts with
+# the strings listed will be available for query.
+
+# pathinclude = ["/home/"]

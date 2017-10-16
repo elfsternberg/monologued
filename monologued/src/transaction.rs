@@ -1,3 +1,5 @@
+use std::time::{Duration, SystemTime};
+
 
 const MAX_BUF_SIZE: usize = 512;
 
@@ -9,6 +11,9 @@ pub struct Transaction {
     // Handle to the socket we're talking with
     sock: TcpStream,
 
+    // The address, for logging purposes
+    client_addr: SocketAddr,
+    
     // The token used to refer to this transaction.
     pub token: Token,
 
@@ -19,7 +24,10 @@ pub struct Transaction {
     buffer: BytesMut,
 
     // An optional buffer to the plan to output. (How do we look this up?)
-    plan: Option<&Bytes>
+    plan: Option<&Bytes>,
+
+    // When the transaction began.
+    when: SystemTime
 }
 
 const NO_PLAN: &'static str = "No plan found.";
@@ -28,12 +36,15 @@ const NO_FORWARD: &'static str = "This server does not support forwarding.";
 const NO_LIST: &'static str = "This server does not support listing.";
 
 impl Transaction {
-    pub fn new(sock: TcpStream, token: Token) -> Transaction {
+    pub fn new(socket: TcpStream, address: SocketAddr, token: Token) -> Transaction {
         Transaction {
-            sock: sock,
+            socket: socket,
+            client_addr: address,
             token: token,
             interest: Ready::from(UnixReady::hup()),
             buffer: BytesMut::with_capacity(MAX_BUF_SIZE),
+            plan: None,
+            when: SystemTime::now(),
         }
     }
 
@@ -42,7 +53,7 @@ impl Transaction {
     ///
     /// Obviously, as this is single-threaded, this will hit the Poll
     /// before the next poll event.
-
+    
     pub fn register(&mut self, poll: &mut Poll) -> io::Resul<()> {
         self.interest.insert(Ready::readable());
         poll.register(&self.sock, self.token, self.interest, PollOpt::edge())
@@ -54,8 +65,7 @@ impl Transaction {
 
 
     /// Attempt to read from the socket
-
-    pub fn readable(&mut self) -> Result<()> {
+    pub fn read(&mut self) -> Result<()> {
         let (len, res) = {
             let mut buf = unsafe { &mut self.buf.bytes_mut() };
             let len = buf.len();
@@ -66,7 +76,7 @@ impl Transaction {
             Ok(0) => { res },
             Ok(r) => {
                 unsafe { BufMut::advance(&mut self.buf, r); };
-                if self.buf.iter(|c as char| c == '\r' || c == '\n') {
+                if self.buf.iter(|c as char| c == b'\r' || c == b'\n') {
                     self.get_plan();
                     self.interest = Ready::writeable()
                 }
@@ -82,7 +92,7 @@ impl Transaction {
 
     /// Attempt to write to socket
 
-    pub fn writeable(&mut self) -> Result<()> {
+    pub fn write(&mut self) -> Result<()> {
         let (len, res) = {
             let buf = &self.plan.bytes();
             let len = buf.len();

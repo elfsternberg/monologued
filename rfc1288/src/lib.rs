@@ -54,7 +54,11 @@ pub fn parse_rfc1288_request(buffer: bytes::Bytes) -> Result<Request, TxError> {
 
     let mut req = buffer.into_iter().peekable();
     if req.next() != Some(b'/') { return Err(TxError::BadProtocol); }
-    if req.next() != Some(b'W') { return Err(TxError::BadProtocol); }
+
+    {
+        let n = req.next();
+        if n != Some(b'W') && n != Some(b'w') { return Err(TxError::BadProtocol); }
+    }
 
     if req.peek() == None {
         return Ok(Request::UserList);
@@ -195,6 +199,20 @@ mod tests {
         }
     }
 
+    #[test]
+    fn good_name_w_host_and_spaces_and_lowercase_w() {
+        let res = parse_rfc1288_request(Bytes::from("/w   foozle@localhost   "));
+        match res {
+            Ok(e) => if let Request::Remote(u, h) = e {
+                assert_eq!(b"foozle", u.as_slice());
+                assert_eq!(b"localhost", h.as_slice()); }
+            else {
+                assert!(false);
+            }, 
+            Err(_) => assert!(false)
+        }
+    }
+    
     #[test]
     fn bad_name() {
         let res = parse_rfc1288_request(Bytes::from("/W   foozle..   "));
