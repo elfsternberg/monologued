@@ -30,6 +30,8 @@ pub struct Transaction {
     when: SystemTime
 }
 
+/* TODO: gettext() these messages */
+
 const NO_PLAN: &'static str = "No plan found.";
 const BAD_FORM: &'static str = "Request was not understood.";
 const NO_FORWARD: &'static str = "This server does not support forwarding.";
@@ -54,7 +56,7 @@ impl Transaction {
     /// Obviously, as this is single-threaded, this will hit the Poll
     /// before the next poll event.
     
-    pub fn register(&mut self, poll: &mut Poll) -> io::Resul<()> {
+    pub fn register_to_read(&mut self, poll: &mut Poll) -> io::Resul<()> {
         self.interest.insert(Ready::readable());
         poll.register(&self.sock, self.token, self.interest, PollOpt::edge())
             .or_else(|e| {
@@ -64,8 +66,12 @@ impl Transaction {
     }
 
 
+    fn get_plan() {
+        
+    
+
     /// Attempt to read from the socket
-    pub fn read(&mut self) -> Result<()> {
+    pub fn read(&mut self, poll: &mut Poll) -> Result<()> {
         let (len, res) = {
             let mut buf = unsafe { &mut self.buf.bytes_mut() };
             let len = buf.len();
@@ -77,14 +83,23 @@ impl Transaction {
             Ok(r) => {
                 unsafe { BufMut::advance(&mut self.buf, r); };
                 if self.buf.iter(|c as char| c == b'\r' || c == b'\n') {
+                    self.interest = (self.interest | Ready::writeable()) & ~Ready::readable();
                     self.get_plan();
-                    self.interest = Ready::writeable()
                 }
                 if !self.interest & Ready::writeable() && self.buf.remaining() == 0 {
                     Err(TransactionError::BufferFull)
                 } else {
-                    Ok(r)
+                    if self.interest & Ready::writeable() {
+                        poll.reregister(&self.sock, self.token, self.interest, PollOpt::edge())
+                            .or_else(|e| {
+                                error!("Failed to register {:?}, {:?}", self.token, e);
+                                Err(e)
+                            })
+                    } else {
+                        Ok(r)
+                    }
                 }
+                
             },
             Err(e) => { res },
         }

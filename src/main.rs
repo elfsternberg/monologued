@@ -38,7 +38,7 @@ fn main() {
                             count += 1;
                             let txn = Transaction::new(socket, client_addr, Token(count));
                             connections.insert(count, txn);
-                            txn.register(&poll);
+                            txn.register_to_read(&poll);
                             println!("Connection from {}", client_addr);
                         }
                         Err(e) => panic!("Got an error when accepting a connection: {}", e)

@@ -1,4 +1,4 @@
-extern crate bytes;
+rextern crate bytes;
 
 #[macro_use]
 extern crate quick_error;
