@@ -1,5 +1,12 @@
-use std::time::{Duration, SystemTime};
-
+use rfc1288::{parse_rfc1288_request, Request};
+use mio::*;
+use std::time::{SystemTime};
+use mio::tcp::{TcpStream};
+use mio::unix::UnixReady;
+use std::net::{SocketAddr};
+use std::io::write;
+use bytes::{Bytes, BytesMut, BufMut, Buf};
+use std::*;
 
 const MAX_BUF_SIZE: usize = 512;
 
@@ -9,10 +16,10 @@ enum TransactionError {
 
 pub struct Transaction {
     // Handle to the socket we're talking with
-    sock: TcpStream,
+    socket: TcpStream,
 
     // The address, for logging purposes
-    client_addr: SocketAddr,
+    pub client_addr: SocketAddr,
     
     // The token used to refer to this transaction.
     pub token: Token,
@@ -24,7 +31,7 @@ pub struct Transaction {
     buffer: BytesMut,
 
     // An optional buffer to the plan to output. (How do we look this up?)
-    plan: Option<&Bytes>,
+    plan: Option<Bytes>,
 
     // When the transaction began.
     when: SystemTime
@@ -56,41 +63,56 @@ impl Transaction {
     /// Obviously, as this is single-threaded, this will hit the Poll
     /// before the next poll event.
     
-    pub fn register_to_read(&mut self, poll: &mut Poll) -> io::Resul<()> {
+    pub fn register_to_read(&mut self, poll: &mut Poll) -> io::Result<()> {
         self.interest.insert(Ready::readable());
-        poll.register(&self.sock, self.token, self.interest, PollOpt::edge())
+        poll.register(&self.socket, self.token, self.interest, PollOpt::edge())
             .or_else(|e| {
                 error!("Failed to register {:?}, {:?}", self.token, e);
                 Err(e)
             })
     }
-
-
-    fn get_plan() {
-        
     
 
+    fn get_plan(&mut self) {
+        self.plan = match parse_rfc1288_request(&self.buffer) {
+            Ok(r) => match r {
+                Request::Remote(u, h) => {
+                    Bytes::from("Remote Request: ".to_string() + u.to_string() + "@".to_string() + h.to_string())
+                }
+                Request::User(u) => {
+                    Bytes::from("Local Request: ".to_string() + u.to_string())
+                }
+                Request::UserList => {
+                    Bytes::from("List Request")
+                }
+            }, 
+            Err(e) => {
+                Bytes::from(e.description())
+            }
+        }
+    }
+
     /// Attempt to read from the socket
-    pub fn read(&mut self, poll: &mut Poll) -> Result<()> {
+    pub fn read(&mut self, poll: &mut Poll) -> Result<usize, std::io::Error> {
         let (len, res) = {
-            let mut buf = unsafe { &mut self.buf.bytes_mut() };
+            let mut buf = unsafe { &mut self.buffer.bytes_mut() };
             let len = buf.len();
-            let res = self.sock.read(buf);
+            let res = self.socket.read(buf);
             (len, res)
         };
         match res {
             Ok(0) => { res },
             Ok(r) => {
-                unsafe { BufMut::advance(&mut self.buf, r); };
-                if self.buf.iter(|c as char| c == b'\r' || c == b'\n') {
-                    self.interest = (self.interest | Ready::writeable()) & ~Ready::readable();
+                unsafe { BufMut::advance(&mut self.buffer, r); };
+                if self.buffer.iter(|c: char| c == b'\r' || c == b'\n') {
+                    self.interest = (self.interest | Ready::writeable()) & !Ready::readable();
                     self.get_plan();
                 }
-                if !self.interest & Ready::writeable() && self.buf.remaining() == 0 {
+                if !self.interest & Ready::writeable() && self.buffer.remaining() == 0 {
                     Err(TransactionError::BufferFull)
                 } else {
                     if self.interest & Ready::writeable() {
-                        poll.reregister(&self.sock, self.token, self.interest, PollOpt::edge())
+                        poll.reregister(&self.socket, self.token, self.interest, PollOpt::edge())
                             .or_else(|e| {
                                 error!("Failed to register {:?}, {:?}", self.token, e);
                                 Err(e)
@@ -107,37 +129,27 @@ impl Transaction {
 
     /// Attempt to write to socket
 
-    pub fn write(&mut self) -> Result<()> {
+    pub fn write(&mut self, poll: &mut Poll) -> Result<usize, std::io::Error> {
         let (len, res) = {
             let buf = &self.plan.bytes();
             let len = buf.len();
-            let res = self.sock.write(buf);
-        }
+            let res = self.socket.write(buf);
+            (len, res)
+        };
         match res {
-            Ok(0) => { },
+            Ok(0) => { Ok(0) },
             Ok(r) => {
                 Buf::advance(&mut self.plan, r);
-                if Buf::remaining(&self.buf) == 0 {
+                if Buf::remaining(&self.buffer) == 0 {
                     self.interest = Ready::empty();
                 }
+                if self.interest == Ready::empty() {
+                    poll.deregister(&self.socket);
+                }
+                Ok(r)
             },
             Err(e) => { res }
         }
     }
-
-    fn get_plan(&self) {
-        
 }
                 
-                
-                
-
-            
-                    
-                    
-                    
-                    
-            
-            
-                
-}

@@ -4,7 +4,7 @@ Monologued is an implementation of an
 [RFC1288](https://tools.ietf.org/html/rfc1288) protocol server in Rust.
 
 That's right.  Monologued is a
-[*Finger*](https://en.wikipedia.org/wiki/Finger_protocol) server.
+*[Finger](https://en.wikipedia.org/wiki/Finger_protocol)* server.
 
 # WHY‽‽‽‽
 
@@ -35,3 +35,11 @@ I wrote a prototype, if you're at all curious, in the
 <code>proto/</code> folder.  It's in
 [Hy](http://docs.hylang.org/en/stable/), my favorite variant of Python.
 You Have Been Warned.
+
+# Thanks
+
+Thanks to my friend Nathaniel for the answer to my original question,
+"In a movie, when the villain is explaining his plans at length, what is
+that called?"  Nathaniel explained that "He's monologuing," and now you
+know why it has that name.
+

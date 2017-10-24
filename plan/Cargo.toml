@@ -1,9 +1,6 @@
 [package]
-name = "rfc1288"
+name = "plan"
 version = "0.1.0"
 authors = ["Elf M. Sternberg <elf.sternberg@gmail.com>"]
 
 [dependencies]
-bytes = "0.4.*"
-quick-error = "1.2.*"
-
