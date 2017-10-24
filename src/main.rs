@@ -1,30 +1,16 @@
 extern crate mio;
     
 use mio::*;
-use mio::tcp::{TcpListener, TcpStream};
+use mio::tcp::{TcpListener};
 
-use std::io::{Read, Write};
+use std::io::{Write};
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 const MAX_CONNECTIONS: usize = 1024;
-const MAX_LINE: usize = 128;
 const LISTENER: mio::Token = mio::Token(0);
 
-
-struct Connection {
-    client_addr: SocketAddr,
-    handle: TcpStream,
-}
-
-impl Connection {
-    fn new(handle: TcpStream, address: SocketAddr) -> Self {
-        Connection {
-            client_addr: address,
-            handle: handle
-        }
-    }
-}
+mod connection;
+use connection::Connection;
 
 fn main() {
     let address="0.0.0.0:6567".parse().unwrap();
@@ -59,7 +45,7 @@ fn main() {
                         if event.readiness().is_writable() {
                             let message = format!("Hello, {}\r\n", conn.client_addr).into_bytes();
                             match conn.handle.write(&message) {
-                                Ok(n) => println!("Wrote to client {}", conn.client_addr),
+                                Ok(_) => println!("Wrote to client {}", conn.client_addr),
                                 Err(e) => println!("Error when writing to connection {}", e)
                             }
                         }
