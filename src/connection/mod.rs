@@ -69,6 +69,8 @@ impl Connection {
                     }
                 },
                 Err(e) => {
+                    // Are there harmless errors? EAGAIN, EWOULDBLOCK?
+                    // What do we do about EINTR? 
                     self.done = true;
                     return false;
                 }
@@ -89,6 +91,8 @@ impl Connection {
                 None => { break; }
             }
         }
+        self.buf = BytesMut::with_capacity(512);
+        self.buf.put_slice(&c[..]);
         true
     }
 
@@ -98,31 +102,32 @@ impl Connection {
         }
 
         loop {
-            let mut buf = self.res.pop_front();
-            
-            loop {
-                
-                let (len, res) = {
-                    let ibuf = &buf.bytes();
-                    let len = ibuf.len();
-                    let res = self.socket.try_write(ibuf);
-                    (len, res)
-                };
-                match res {
-                    Ok(None) => {
-                        break;
-                    },
-                    Ok(Some(r)) => {
-                        Buf::advance(&mut buf, r);
-                        if r != len || Buf::remaining_mut(buf) == 0 {
-                            break;
+            match self.res.pop_front() {
+                Some(b) => {
+                    loop {
+                        let (len, res) = {
+                            let len = b.len();
+                            let res = self.socket.write(&b[..]);
+                            (len, res)
+                        };
+                        match res {
+                            Ok(0) => {
+                                break;
+                            },
+                            Ok(r) => {
+                                Buf::advance(&mut b, r);
+                                if r != len || Buf::remaining_mut(b) == 0 {
+                                    break;
+                                }
+                            },
+                            Err(_) => {
+                                Buf::advance(&mut b, len);
+                                break;
+                            }
                         }
-                    },
-                    Err(_) => {
-                        Buf::advance(&mut buf, len);
-                        break;
                     }
-                }
+                },
+                None => { break; }
             }
         }
     }
