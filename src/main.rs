@@ -1,11 +1,18 @@
 extern crate mio;
-extern crate nix;
 extern crate bytes;
+extern crate unicode_segmentation;
+extern crate slab;
+
+#[macro_use]
+extern crate log;
+
+mod server;
+mod tokenqueue;
+mod connection;
 
 use mio::*;
 use mio::tcp::*;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use mio::util::Slab;
 use std::io;
 use std::fmt;
 use std::fmt::Debug;
@@ -18,9 +25,8 @@ const SERVER: mio::Token = mio::Token(0);
 const MAX_CONNECTIONS: usize = 1024;
 
 // The GNU "cfingerd" port, for testing.
-const DEFAULT_LISTEN_ADDR : &'static str= "0.0.0.0:2003";
+const DEFAULT_LISTEN_ADDR: &'static str = "0.0.0.0:2003";
 
-mod server;
 use server::Server;
 
 fn serverd_addr() -> SocketAddr {
@@ -29,9 +35,6 @@ fn serverd_addr() -> SocketAddr {
 
 pub fn main() {
     let addr = serverd_addr();
-    let mut server = Server::new(addr, SERVER);
-    server.run().unwrap();
+    let mut server = Server::new(addr, SERVER, MAX_CONNECTIONS);
+    server.unwrap().run();
 }
-
-
-
