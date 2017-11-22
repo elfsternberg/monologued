@@ -1,50 +1,57 @@
 use unicode_segmentation::UnicodeSegmentation;
 
-use mio::tcp::{TcpStream};
-use mio::Event;
-use std::io::{Read, Write};
+use mio::tcp::TcpStream;
+use mio::{Event, Token};
+use mio::unix::UnixReady;
+use std::io::{self, Read, Write};
 use std::collections::VecDeque;
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut, BytesMut, Bytes};
 use mio::Ready;
 
 
+#[derive(PartialEq)]
 pub enum ConnectionState {
     Running,
-    Done
+    Closed,
 }
 
 pub struct Connection {
     pub socket: TcpStream,
     buf: BytesMut,
-    res: VecDeque<Vec<u8>>,
-    done: bool,
-    state: ConnectionState,
+    res: VecDeque<Bytes>,
+    pub state: ConnectionState,
+    pub token: Token,
+    pub ready: Ready,
 }
 
 impl Connection {
-    pub fn new(socket: TcpStream) -> Self {
+    pub fn new(socket: TcpStream, token: Token) -> Self {
         Connection {
-            buf: BytesMut::with_capacity(512),
-            res: VecDeque::new(),
             socket: socket,
-            done: false,
+            buf: BytesMut::with_capacity(1024),
+            res: VecDeque::new(),
+            token: token,
             state: ConnectionState::Running,
+            ready: Ready::readable() | Ready::from(UnixReady::hup()),
         }
     }
 
-    pub fn is_running(&self) -> bool {
-        !self.done
-    }
-
+    
+    
     // Take the event and decide what to do with it.
-    pub fn handle(&mut self, event: &Event) -> bool {
-        if self.is_running() && (event.readiness() & Ready::writable() == Ready::writable()) {
+    pub fn message(&mut self, ready: &Ready) -> ConnectionState {
+        if self.state == ConnectionState::Closed {
+            return self.state;
+        }
+
+        if ready.is_writable() {
             self.write();
         }
-        if self.is_running() && (event.readiness() & Ready::readable() == Ready::readable()) {
+
+        if ready.is_readable() {
             self.read();
         }
-        return self.is_running()
+        self.state
     }
 
     // Notified that there is a desire to read, we read as much
@@ -52,7 +59,7 @@ impl Connection {
     // buffer (ugh), then notifying the protocol if there's
     // data to be read.  If anything goes wrong, we notify
     // the connection that something has failed.
-    fn read(&mut self) -> bool {
+    fn read(&mut self) {
         loop {
             let (len, ret) = {
                 let mut buf = unsafe { &mut BytesMut::bytes_mut(&mut self.buf) };
@@ -63,42 +70,48 @@ impl Connection {
             match ret {
                 Ok(0) => break,
                 Ok(l) => {
-                    unsafe { self.buf.advance_mut(l); }
+                    unsafe {
+                        self.buf.advance_mut(l);
+                    }
                     if l != len || BufMut::remaining_mut(&self.buf) == 0 {
                         break;
                     }
-                },
-                Err(e) => {
-                    // Are there harmless errors? EAGAIN, EWOULDBLOCK?
-                    // What do we do about EINTR? 
-                    self.done = true;
-                    return false;
+                }
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    // Socket is not ready anymore, stop accepting
+                    break;
+                }
+                er => {
+                    error!("Unexpected error: {:?}", er);
+                    self.state = ConnectionState::Closed;
+                    return;
                 }
             }
         }
+
         let c = self.buf.clone();
         loop {
             match c.iter().position(|&x| x == b'\n' || x == b'\r') {
                 Some(p) => {
                     let word = String::from_utf8_lossy(&c[0..p]);
-                    let drow: String = word
-                        .graphemes(true)
+                    let drow: String = word.graphemes(true)
                         .rev()
                         .flat_map(|g| g.chars())
                         .collect();
-                    self.res.push_back(drow.into_bytes());
+                    self.res.push_back(Bytes::from(drow.into_bytes()));
                 }
-                None => { break; }
+                None => {
+                    break;
+                }
             }
         }
         self.buf = BytesMut::with_capacity(512);
         self.buf.put_slice(&c[..]);
-        true
     }
 
-    fn write(&mut self) -> bool {
+    fn write(&mut self) {
         if self.res.len() == 0 {
-            return true
+            return;
         }
 
         loop {
@@ -113,7 +126,7 @@ impl Connection {
                         match res {
                             Ok(0) => {
                                 break;
-                            },
+                            }
                             Ok(r) => {
                                 Buf::advance(&mut b, r);
                                 if r != len || Buf::remaining_mut(b) == 0 {
@@ -126,8 +139,11 @@ impl Connection {
                             }
                         }
                     }
-                },
-                None => { break; }
+                }
+                None => {
+                    break;
+                }
+
             }
         }
     }
