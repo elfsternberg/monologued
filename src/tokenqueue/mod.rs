@@ -33,18 +33,21 @@ impl NextFree {
         }
     }
 
-    pub fn pop(&self) -> usize {
-        match self.queue.peek() {
-            Nothing => {
+    pub fn pop(&mut self) -> usize {
+        match self.queue.pop() {
+            Some(n) => {
+                n.0
+            },
+            
+            None => {
                 self.max += 1;
                 self.max
             }
 
-            Some(n) => self.queue.pop().unwrap().0,
         }
     }
 
-    pub fn push(&self, position: usize) {
+    pub fn push(&mut self, position: usize) {
         self.queue.push(NextFreeToken(position));
     }
 }

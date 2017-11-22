@@ -1,11 +1,11 @@
 use unicode_segmentation::UnicodeSegmentation;
 
 use mio::tcp::TcpStream;
-use mio::{Event, Token};
+use mio::Token;
 use mio::unix::UnixReady;
 use std::io::{self, Read, Write};
 use std::collections::VecDeque;
-use bytes::{Buf, BufMut, BytesMut, Bytes};
+use bytes::{Buf, BufMut, BytesMut, Bytes, IntoBuf};
 use mio::Ready;
 
 
@@ -36,12 +36,12 @@ impl Connection {
         }
     }
 
-    
-    
+
+
     // Take the event and decide what to do with it.
-    pub fn message(&mut self, ready: &Ready) -> ConnectionState {
+    pub fn message(&mut self, ready: &Ready) -> bool {
         if self.state == ConnectionState::Closed {
-            return self.state;
+            return false;
         }
 
         if ready.is_writable() {
@@ -51,7 +51,7 @@ impl Connection {
         if ready.is_readable() {
             self.read();
         }
-        self.state
+        return true;
     }
 
     // Notified that there is a desire to read, we read as much
@@ -62,7 +62,7 @@ impl Connection {
     fn read(&mut self) {
         loop {
             let (len, ret) = {
-                let mut buf = unsafe { &mut BytesMut::bytes_mut(&mut self.buf) };
+                let buf = unsafe { &mut BytesMut::bytes_mut(&mut self.buf) };
                 let len = buf.len();
                 let ret = self.socket.read(buf);
                 (len, ret)
@@ -89,24 +89,21 @@ impl Connection {
             }
         }
 
-        let c = self.buf.clone();
-        loop {
-            match c.iter().position(|&x| x == b'\n' || x == b'\r') {
-                Some(p) => {
-                    let word = String::from_utf8_lossy(&c[0..p]);
-                    let drow: String = word.graphemes(true)
-                        .rev()
-                        .flat_map(|g| g.chars())
-                        .collect();
-                    self.res.push_back(Bytes::from(drow.into_bytes()));
-                }
-                None => {
-                    break;
-                }
+        let mut iter = self.buf.split(|&x| x == b'\n' || x == b'\r');
+        for b in iter {
+            let word = String::from_utf8_lossy(&b);
+            let drow: String = word.graphemes(true)
+                .rev()
+                .flat_map(|g| g.chars())
+                .collect();
+            if drow.len() > 0 {
+                self.res.push_back(Bytes::from(drow.into_bytes()));
             }
         }
-        self.buf = BytesMut::with_capacity(512);
-        self.buf.put_slice(&c[..]);
+
+        if self.res.len() > 0 {
+            self.ready = Ready::readable() | Ready::writable() | Ready::from(UnixReady::hup());
+        }
     }
 
     fn write(&mut self) {
@@ -117,24 +114,26 @@ impl Connection {
         loop {
             match self.res.pop_front() {
                 Some(b) => {
+                    let len = b.len();
+                    let mut pos = 0;
+                    let mut buf = b.into_buf();
                     loop {
-                        let (len, res) = {
-                            let len = b.len();
-                            let res = self.socket.write(&b[..]);
-                            (len, res)
+                        let res = {
+                            self.socket.write(&Buf::bytes(&buf))
                         };
                         match res {
                             Ok(0) => {
                                 break;
                             }
                             Ok(r) => {
-                                Buf::advance(&mut b, r);
-                                if r != len || Buf::remaining_mut(b) == 0 {
+                                Buf::advance(&mut buf, r);
+                                pos = pos + r;
+                                if pos != len || Buf::remaining(&buf) == 0 {
                                     break;
                                 }
-                            },
+                            }
                             Err(_) => {
-                                Buf::advance(&mut b, len);
+                                Buf::advance(&mut buf, len);
                                 break;
                             }
                         }
