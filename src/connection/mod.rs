@@ -51,7 +51,8 @@ impl Connection {
         if ready.is_readable() {
             self.read();
         }
-        return true;
+
+        ! (self.state == ConnectionState::Closed)
     }
 
     // Notified that there is a desire to read, we read as much
@@ -145,5 +146,6 @@ impl Connection {
 
             }
         }
+        self.state = ConnectionState::Closed;
     }
 }
