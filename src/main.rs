@@ -46,15 +46,18 @@ fn main() {
                     connections.insert(count, Connection::new(stream));
                 }
 
-
+                // Really, at this layer, all that we care about is
+                // whether or not to remove the connection from the
+                // list of connections the server cares about.
+                
                 Token(c) => {
                     println!("Got token {}", c);
-                    let done = {
+                    let running = {
                         let conn = connections.get_mut(&c).unwrap();
                         conn.handle(&event)
                     };
 
-                    if done {
+                    if ! running {
                         let conn = connections.remove(&c).unwrap();
                         poll.deregister(&conn.socket);
                     }
