@@ -12,21 +12,8 @@ keywords = ["server", "finger"]
 [dependencies]
 mio = "0.6.10"
 net2 = "0.2.31"
-bytes = "0.4.*"
-quick-error = "1.2.*"
-toml = "*"
-clap = "*"
-log = "0.3.1"
-
-rfc1288 = { path = "rfc1288" }
-
-
-[[bin]]
-name = "monologued"
-
-[workspace]
-members = [
-    "rfc1288",
-    "plan",
-]
-
+unicode-segmentation = "1.2.*"
+bytes = "0.4.5"
+log = "0.3"
+env_logger = "0.4.*"
+slab = "0.4"
