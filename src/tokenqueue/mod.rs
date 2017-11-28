@@ -20,30 +20,35 @@ impl PartialOrd for NextFreeToken {
     }
 }
 
-pub struct NextFree {
-    max: usize,
+pub struct TokenPool {
+    floor: usize,
+    ceiling: usize,
     queue: BinaryHeap<NextFreeToken>,
 }
 
-impl NextFree {
-    pub fn new(start: usize) -> Self {
-        NextFree {
-            max: start,
+impl TokenPool {
+    pub fn new(floor: usize, ceiling: usize) -> Self {
+        TokenPool {
+            floor: floor,
+            ceiling: ceiling,
             queue: BinaryHeap::new(),
         }
     }
-
+    
     pub fn pop(&mut self) -> usize {
         match self.queue.pop() {
             Some(n) => {
-                n.0
+                Ok(n.0)
             },
             
             None => {
-                self.max += 1;
-                self.max
+                if (self.floor < self.ceiling) {
+                    self.floor += 1;
+                    Ok(self.floor)
+                } else {
+                    None
+                }
             }
-
         }
     }
 

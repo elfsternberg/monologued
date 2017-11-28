@@ -13,6 +13,7 @@ mod connection;
 
 use std::net::SocketAddr;
 use std::str::FromStr;
+use tokenqueue::TokenPool;
 
 const SERVER: mio::Token = mio::Token(1);
 const MAX_CONNECTIONS: usize = 1024;
@@ -28,7 +29,12 @@ fn serverd_addr() -> SocketAddr {
 
 pub fn main() {
     env_logger::init().unwrap();
+    let client_token_pool = TokenPool::new(SERVER + 1, MAX_CONNECTIONS);
+    let poller = Poller::new(client_token_pool);
+
+    
     let addr = serverd_addr();
-    let server = Server::new(addr, SERVER, MAX_CONNECTIONS);
+    let poll = try!(Poll::new());
+    let server = Server::new(poll, addr, SERVER, MAX_CONNECTIONS);
     server.unwrap().run();
 }
