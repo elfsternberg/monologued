@@ -35,16 +35,16 @@ impl TokenPool {
         }
     }
     
-    pub fn pop(&mut self) -> usize {
+    pub fn pop(&mut self) -> Option<usize> {
         match self.queue.pop() {
             Some(n) => {
-                Ok(n.0)
+                Some(n.0)
             },
             
             None => {
-                if (self.floor < self.ceiling) {
+                if self.floor < self.ceiling {
                     self.floor += 1;
-                    Ok(self.floor)
+                    Some(self.floor)
                 } else {
                     None
                 }
