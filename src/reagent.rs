@@ -1,5 +1,9 @@
-use mio::{Token, Poll, Ready};
-use std::io::{Result};
+use mio::{Token, Poll, Event};
+use errors::*;
+
+// All this boxing is necessary in order to make Message movable and
+// queue-able, as a Box sets an upper limit on the size of the Message
+// itself
 
 pub enum Message {
     AddAgent(Box<ReAgent>),
@@ -14,6 +18,7 @@ pub trait ReAgent {
     fn reregister(&self, poll: &Poll) -> Result<()>;
     fn deregister(&self, poll: &Poll) -> Result<()>;
 
+    fn get_token(&mut self) -> Token;
     fn set_token(&mut self, Token);
-    fn react(&self, event: Ready) -> Result<Message>;
+    fn react(&mut self, event: &Event) -> Result<Message>;
 }
