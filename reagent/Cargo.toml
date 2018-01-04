@@ -1,0 +1,7 @@
+[package]
+name = "reagent"
+version = "0.1.0"
+authors = ["Elf M. Sternberg <elf.sternberg@gmail.com>"]
+
+[dependencies]
+quick-error = "1.2.*"
