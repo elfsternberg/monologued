@@ -43,8 +43,9 @@ impl TokenPool {
             
             None => {
                 if self.floor < self.ceiling {
+                    let n = self.floor;
                     self.floor += 1;
-                    Some(self.floor)
+                    Some(n)
                 } else {
                     None
                 }
@@ -56,3 +57,36 @@ impl TokenPool {
         self.queue.push(NextFreeToken(position));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn basic_handling() {
+        let mut pool = TokenPool::new(0, 10);
+        let p1 = pool.pop().unwrap();
+        let p2 = pool.pop().unwrap();
+        let p3 = pool.pop().unwrap();
+        pool.push(p2);
+        let p4 = pool.pop().unwrap();
+
+        assert_eq!(p1, 0);
+        assert_eq!(p3, 2);
+        assert_eq!(p4, 1);
+    }
+
+    // Note that this is lossy: the tokens popped off here are not
+    // recorded and can never be recovered.  This isn't a fatal error
+    // (until you run out of tokens and you handle that poorly, of
+    // course).
+
+    #[test]
+    fn exhausted_space() {
+        let mut pool = TokenPool::new(0, 2);
+        pool.pop();
+        pool.pop();
+        let p3 = pool.pop();
+        assert_eq!(p3, None);
+    }
+}        
