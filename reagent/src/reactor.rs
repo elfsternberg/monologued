@@ -1,23 +1,29 @@
-use tokenqueue::TokenPool;
+use tokenpool::TokenPool;
 
-use mio::*;
 use std;
-use std::io::{Result, Error, ErrorKind};
+use mio::{Poll, Token, Event, Events};
 use std::collections::{VecDeque, HashMap};
 
-pub use errors::*;
+use errors::*;
 
-use reagent::{Message, ReAgent};
+use reagent::{ReAgent, Message};
+use reagent::Message::*;
 
-/* Server is a generalized single-pool abstraction around poll() */
+/// A Reactor has a handle on a poll, a list of Reagents that it cares
+/// about, and a TokenPool that it uses to track the number of
+/// connection IDs in use and currently available.
 
 pub struct Reactor<'a> {
     poll: Poll,
-    agents: HashMap<Token, &'a ReAgent>,
+    agents: HashMap<Token, Box<ReAgent + 'a>>,
     tokens: TokenPool,
 }
 
+
 impl<'a> Reactor<'a> {
+
+    /// Constructor. Derp.
+    
     pub fn new(max_connections: usize) -> Result<Self> {
         let poll = try!(Poll::new());
         Ok(Reactor {
@@ -27,44 +33,56 @@ impl<'a> Reactor<'a> {
         })
     }
 
+    /// Given a Reagent, try to add it to the system.  Huh... should I
+    /// check if the token is free / has been freed before requesting
+    /// it?
+    
     pub fn add_agent<R>(&mut self, mut agent: R) -> Result<()>
-        where R: ReAgent
+        where R: Box<ReAgent + 'a>
     {
         if let Some(next_token) = self.tokens.pop() {
             agent.set_token(Token(next_token));
             agent.register(&self.poll);
-            self.agents.insert(agent.get_token(), &agent);
+            self.agents.insert(agent.get_token(), agent);
             return Ok(())
         } 
 
-        try!(Err("We are out of agent tokens?"))
+        bail!(ErrorKind::ConnectionsExhausted)
     }
 
-    fn update_agent_poll_options(&mut self, token: Token) {
-        match self.agents.get(token) {
+    /// ReAgent.ReRegister() handler...
+    
+    fn update_agent_poll_options(&mut self, token: Token) -> Result<()> {
+        match self.agents.get(&token) {
             Some(agent) => {
                 agent.reregister(&self.poll);
             },
             None => {
-                error!("Failed to find connection during queue pass {:?}", token);
+                panic!("Failed to find connection during queue pass {:?}", token);
             }
         }
+        Ok(())
     }
 
-    pub fn rem_agent(&mut self, token: Token) {
+    /// ReAgent.DeRegister() handler...
+    
+    pub fn rem_agent(&mut self, token: Token) -> Result<()> {
         match self.agents.remove(&token) {
             Some(agent) =>
                 match agent.deregister(&self.poll) {
                     Ok(_) => {
-                        self.tokens.push(std::convert::From::from(&agent.get_token()))
+                        self.tokens.push(std::convert::From::from(agent.get_token()))
                     },
                     Err(e) => {
-                        error!("Something went weird while deregistering the connection: {:?}", e)
+                        panic!("Something went weird while deregistering the connection: {:?}", e)
                     }
                 }
-            None => error!("Could not remove connection from pool: {:?}", token),
+            None => panic!("Could not remove connection from pool: {:?}", token),
         }
+        Ok(())
     }
+
+    /// React for one agent.
     
     fn handle_event(&mut self, event: &Event) -> Result<Message> {
         match self.agents.get_mut(&event.token()) {
@@ -72,37 +90,38 @@ impl<'a> Reactor<'a> {
                 agent.react(&event)
             }
             None => {
-                error!("Failed to find connection {:?}", event.token());
-                Err(Error::new(ErrorKind::Other, "Failed to find connection."))
+                panic!("Failed to find connection {:?}", event.token());
             }
         }
     }
+
+    /// Send reactions to events.
     
     pub fn run(&mut self) -> Result<()> {
-        use reagent::Message::*;
-
-        if self.agents.len() < 1 {
-            panic!("The server cannot be run on an empty collection.")
-        }
-        
         let mut events = Events::with_capacity(self.agents.len());
         let mut messagequeue = VecDeque::with_capacity(events.len());
         
         loop {
+            if self.agents.len() < 1 {
+                // Possible if we're done.
+                return Ok(())
+            }
+        
             match self.poll.poll(&mut events, None) {
                 Ok(cnt) => {
                     for event in events {
                         match self.handle_event(&event) {
                             Ok(message) => {
-                                messagequeue.push_back(Box {message})
+                                messagequeue.push_back(message)
                             }
                             Err(e) => {
-                                error!("Error while processing request: {:?}", e)
+                                panic!("Error while processing request: {:?}", e)
                             }
                         }
                     }
                 }
             }
+
             while messagequeue.len() > 0 {
                 match messagequeue.pop_front() {
                     Some(message) => {
@@ -110,9 +129,9 @@ impl<'a> Reactor<'a> {
                             AddAgent(agent) => self.add_agent(agent),
                             RemAgent(token) => self.rem_agent(token),
                             Reregister(token) => self.update_agent_poll_options(token),
-                            PassMessage(message) => messagequeue.push_back(message),
-                            Continue => { },
-                        }
+//                            box PassMessage(message) => messagequeue.push_back(message),
+                            Continue => Ok(()),
+                        };
                     }
                     None => {
                         break;

@@ -1,12 +1,12 @@
-quick_error! {
-    #[derive(PartialEq)]
-    #[derive(Debug)]
-    pub enum ReagentError {
-        BadProtocol {
-            description("Protocol prefix not recognized")
+error_chain! {
+    errors {
+        ConnectionsExhausted {
+            description("Tokens exhausted")
+            display("The token pool has been exhausted -- Too many connections.")
         }
-        BadRequest {
-            description("Protocol request does not meet specification")
-        }
+    }
+
+    foreign_links {
+        Io(::std::io::Error) #[cfg(unix)];
     }
 }

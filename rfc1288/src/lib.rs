@@ -1,12 +1,10 @@
 extern crate bytes;
 
 #[macro_use]
-extern crate quick_error;
+extern crate error_chain;
 
-quick_error! {
-    #[derive(PartialEq)]
-    #[derive(Debug)]
-    pub enum Rfc1288Err {
+error_chain! {
+    errors {
         BadProtocol {
             description("Protocol prefix not recognized")
         }
@@ -47,17 +45,17 @@ fn is_unix_conventional(i: Option<&u8>) -> bool {
     }
 }
 
-pub fn parse_rfc1288_request(buffer: &bytes::Bytes) -> Result<Request, Rfc1288Err> {
+pub fn parse_rfc1288_request(buffer: &bytes::Bytes) -> Result<Request> {
     if buffer.len() < 2 {
-        return Err(Rfc1288Err::BadProtocol);
-    }
+        return ErrorKind::BadProtocol);
+}
 
     let mut req = buffer.into_iter().peekable();
-    if req.next() != Some(b'/') { return Err(Rfc1288Err::BadProtocol); }
+    if req.next() != Some(b'/') { return Err(ErrorKind::BadProtocol); }
 
     {
         let n = req.next();
-        if n != Some(b'W') && n != Some(b'w') { return Err(Rfc1288Err::BadProtocol); }
+        if n != Some(b'W') && n != Some(b'w') { return Err(ErrorKind::BadProtocol); }
     }
 
     if req.peek() == None {
@@ -65,7 +63,7 @@ pub fn parse_rfc1288_request(buffer: &bytes::Bytes) -> Result<Request, Rfc1288Er
     }
 
     if req.peek() != Some(&b' ') {
-        return Err(Rfc1288Err::BadProtocol);
+        return Err(ErrorKind::BadProtocol);
     }
 
     loop {
@@ -92,7 +90,7 @@ pub fn parse_rfc1288_request(buffer: &bytes::Bytes) -> Result<Request, Rfc1288Er
     }
 
     if req.next() != Some(b'@') {
-        return Err(Rfc1288Err::BadRequest);
+        return Err(ErrorKind::BadRequest);
     }
 
     while req.peek() != Some(&b' ') && req.peek() != None {
@@ -131,7 +129,7 @@ mod tests {
         let res = parse_rfc1288_request(&Bytes::from(""));
         match res {
             Ok(_) => assert!(false),
-            Err(e) => assert_eq!(e, Rfc1288Err::BadProtocol),
+            Err(e) => assert_eq!(e, ErrorKind::BadProtocol),
         }
     }
 
@@ -140,7 +138,7 @@ mod tests {
         let res = parse_rfc1288_request(&Bytes::from("/"));
         match res {
             Ok(_) => assert!(false),
-            Err(e) => assert_eq!(e, Rfc1288Err::BadProtocol),
+            Err(e) => assert_eq!(e, ErrorKind::BadProtocol),
         }
     }
 
@@ -149,7 +147,7 @@ mod tests {
         let res = parse_rfc1288_request(&Bytes::from("/X"));
         match res {
             Ok(_) => assert!(false),
-            Err(e) => assert_eq!(e, Rfc1288Err::BadProtocol),
+            Err(e) => assert_eq!(e, ErrorKind::BadProtocol),
         }
     }
 
@@ -218,7 +216,7 @@ mod tests {
         let res = parse_rfc1288_request(&Bytes::from("/W   foozle..   "));
         match res {
             Ok(_) => assert!(false),
-            Err(e) => assert_eq!(e, Rfc1288Err::BadRequest),
+            Err(e) => assert_eq!(e, ErrorKind::BadRequest),
         }
     }
     
