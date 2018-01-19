@@ -37,8 +37,7 @@ impl<'a> Reactor<'a> {
     /// check if the token is free / has been freed before requesting
     /// it?
     
-    pub fn add_agent<R>(&mut self, mut agent: R) -> Result<()>
-        where R: Box<ReAgent + 'a>
+    pub fn add_agent<R: ReAgent + ?Sized + 'a>(&mut self, mut agent: Box<R>) -> Result<()>
     {
         if let Some(next_token) = self.tokens.pop() {
             agent.set_token(Token(next_token));
