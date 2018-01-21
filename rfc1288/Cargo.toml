@@ -5,5 +5,5 @@ authors = ["Elf M. Sternberg <elf.sternberg@gmail.com>"]
 
 [dependencies]
 bytes = "0.4.*"
-error_chain = "0.11.0"
+error-chain = "0.11.*"
 
