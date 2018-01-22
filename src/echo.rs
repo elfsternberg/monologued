@@ -1,14 +1,15 @@
-use unicode_segmentation::UnicodeSegmentation;
-
 use bytes::{Buf, BufMut, BytesMut, Bytes, IntoBuf};
-use reagent::reagent::{ReAgent, Message};
 use mio::net::{TcpListener, TcpStream};
 use mio::unix::UnixReady;
 use mio::{Poll, PollOpt, Token, Ready, Event};
+use reagent::errors::*;
+use reagent::reagent::{ReAgent, Message};
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
+use std::net::Shutdown;
 use std::net::SocketAddr;
-use reagent::errors::*;
+use std::ops::Drop;
+use unicode_segmentation::UnicodeSegmentation;
 
 
 pub struct EchoAgent {
@@ -175,6 +176,11 @@ impl EchoAgent {
     }
 }
 
+impl Drop for EchoAgent {
+    fn drop(&mut self) {
+        self.stream.shutdown(Shutdown::Both).unwrap();
+    }
+}
 
 pub struct EchoServer {
     listener: TcpListener,
