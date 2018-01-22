@@ -1,21 +1,15 @@
 use unicode_segmentation::UnicodeSegmentation;
 
 use bytes::{Buf, BufMut, BytesMut, Bytes, IntoBuf};
-use reagent::{ReAgent, Message};
+use reagent::reagent::{ReAgent, Message};
 use mio::net::{TcpListener, TcpStream};
 use mio::unix::UnixReady;
 use mio::{Poll, PollOpt, Token, Ready, Event};
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::net::SocketAddr;
+use reagent::errors::*;
 
-use errors::*;
-
-#[derive(PartialEq)]
-pub enum ConnectionState {
-    Running,
-    Closed,
-}
 
 pub struct EchoAgent {
     stream: TcpStream,
@@ -28,17 +22,20 @@ pub struct EchoAgent {
 impl ReAgent for EchoAgent {
     fn register(&self, poll: &Poll) -> Result<()> {
         poll.register(&self.stream, self.token, self.interest, PollOpt::edge())
+            .chain_err(|| "Could not register client.")
     }
 
     fn reregister(&self, poll: &Poll)  -> Result<()> {
         poll.reregister(&self.stream, self.token, self.interest, PollOpt::edge())
+            .chain_err(|| "Could not reregister client.")
     }
 
     fn deregister(&self, poll: &Poll)  -> Result<()> {
         poll.deregister(&self.stream)
+            .chain_err(|| "Could not deregister client.")
     }
 
-    fn get_token(&mut self) -> Token {
+    fn get_token(&self) -> Token {
         self.token
     }
 
@@ -50,7 +47,7 @@ impl ReAgent for EchoAgent {
         if self.interest == Ready::empty() {
             return Ok(Message::RemAgent(self.token));
         }
-
+        
         let readiness = event.readiness();
         
         if readiness.is_writable() {
@@ -61,6 +58,7 @@ impl ReAgent for EchoAgent {
 
         if readiness.is_readable() {
             if let Some(message) = self.read() {
+                self.buffer.clear();
                 return Ok(message);
             }
         }
@@ -70,7 +68,7 @@ impl ReAgent for EchoAgent {
 }
 
 impl EchoAgent {
-    pub fn new(stream: TcpStream, addr: &SocketAddr) -> EchoAgent {
+    pub fn new(stream: TcpStream) -> EchoAgent {
         EchoAgent {
             stream: stream,
             token: Token(0),
@@ -113,11 +111,12 @@ impl EchoAgent {
         let iter = self.buffer.split(|&x| x == b'\n' || x == b'\r');
         for b in iter {
             let word = String::from_utf8_lossy(&b);
-            let drow: String = word.graphemes(true)
+            let mut drow: String = word.graphemes(true)
                 .rev()
                 .flat_map(|g| g.chars())
                 .collect();
             if drow.len() > 0 {
+                drow.push_str("\n\r");
                 self.res.push_back(Bytes::from(drow.into_bytes()));
             }
         }
@@ -126,7 +125,7 @@ impl EchoAgent {
             self.interest = Ready::readable() |
                             Ready::writable() |
                             Ready::from(UnixReady::hup());
-            return Some(Message::Reregister(&self));
+            return Some(Message::Reregister(self.get_token()));
         }
 
         None
@@ -172,7 +171,7 @@ impl EchoAgent {
             }
         }
         self.interest = Ready::empty();
-        None
+        Some(Message::RemAgent(self.get_token()))
     }
 }
 
@@ -187,11 +186,11 @@ impl EchoServer {
     pub fn new(addr: &SocketAddr) -> Result<EchoServer> {
         match TcpListener::bind(addr) {
             Ok(listener) => {
-                EchoServer {
+                Ok(EchoServer {
                     listener: listener,
                     token: Token(0),
                     interest: Ready::readable(),
-                }
+                })
             }
             
             // I thought about making this a chainable error, but no:
@@ -207,17 +206,20 @@ impl EchoServer {
 impl ReAgent for EchoServer {
     fn register(&self, poll: &Poll) -> Result<()> {
         poll.register(&self.listener, self.token, self.interest, PollOpt::edge())
+            .chain_err(|| "Could not register server.")
     }
     
     fn reregister(&self, poll: &Poll)  -> Result<()> {
         poll.reregister(&self.listener, self.token, self.interest, PollOpt::edge())
+            .chain_err(|| "Could not reregister server.")
     }
 
     fn deregister(&self, poll: &Poll)  -> Result<()> {
         poll.deregister(&self.listener)
+            .chain_err(|| "Could not deregister server.")
     }
 
-    fn get_token(&mut self) -> Token {
+    fn get_token(&self) -> Token {
         self.token
     }
 
@@ -228,15 +230,14 @@ impl ReAgent for EchoServer {
     fn react(&mut self, event: &Event) -> Result<Message> {
         if event.readiness().is_readable() {
             match self.listener.accept() {
-                Ok((stream, agent_addr)) => {
-                    let agent = EchoAgent::new(stream, &agent_addr);
-                    Ok(Message::AddAgent(Box {agent}))
+                Ok((stream, _)) => {
+                    Ok(Message::AddAgent(Box::new(EchoAgent::new(stream))))
                 }
                 Err(e) => {
                     if e.kind() == io::ErrorKind::WouldBlock {
                         Ok(Message::Continue)
                     } else {
-                        Err(e)
+                        Err(::std::convert::From::from(e))
                     }
                 }
             }

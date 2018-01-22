@@ -7,6 +7,6 @@ error_chain! {
     }
 
     foreign_links {
-        Io(::std::io::Error) #[cfg(unix)];
+        Io(::std::io::Error) #[cfg(unix)] #[doc = "A wrapper around `std::io::Error`"];
     }
 }

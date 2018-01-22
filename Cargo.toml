@@ -18,3 +18,10 @@ bytes = "0.4.5"
 log = "0.3"
 env_logger = "0.4.*"
 slab = "0.4"
+
+[dependencies.rfc1288]
+path = "rfc1288"
+
+[dependencies.reagent]
+path = "reagent"
+
