@@ -7,9 +7,11 @@ error_chain! {
     errors {
         BadProtocol {
             description("Protocol prefix not recognized")
+            display("Protocol not recognized")
         }
         BadRequest {
             description("Protocol request does not meet specification")
+            display("Protocol request does not meet minimal specification")
         }
     }
 }

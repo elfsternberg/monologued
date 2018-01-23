@@ -7,12 +7,13 @@ extern crate log;
 
 extern crate env_logger;
 extern crate reagent;
+extern crate rfc1288;
 
-mod echo;
+mod monologue;
 
 use std::net::SocketAddr;
 use reagent::reactor::Reactor;
-use echo::EchoServer;
+use monologue::MonologueServer;
 
 use reagent::errors::*;
 
@@ -29,7 +30,7 @@ fn serverd_addr() -> SocketAddr {
 pub fn serve() -> Result<()> {
     let mut reactor = Reactor::new(MAX_CONNECTIONS)?;
     let address = serverd_addr();
-    let server = Box::new(EchoServer::new(&address)?);
+    let server = Box::new(MonologueServer::new(&address)?);
     reactor.add_agent(server)?;
     reactor.run()
 }
